@@ -67,11 +67,21 @@ export class QuizRoom {
    */
   addPlayer(name: string, ws: WebSocket): string {
     // TODO: Generer un ID unique (ex: crypto.randomUUID() ou Math.random())
+    const id = Math.random().toString(36).substring(2, 10)
+
     // TODO: Creer le Player et l'ajouter a this.players
+    const player: Player = { id, name, ws }
+    this.players.set(id, player)
+
     // TODO: Initialiser le score a 0
+    this.scores.set(id, 0)
+
     // TODO: Envoyer 'joined' a tous les clients
+    const playerNames = Array.from(this.players.values()).map(p => p.name)
+    this.broadcastToAll({ type: 'joined', playerId: id, players: playerNames })
+
     // TODO: Retourner l'ID du joueur
-    return ''
+    return id
   }
 
   /**
@@ -82,7 +92,11 @@ export class QuizRoom {
    */
   start(): void {
     // TODO: Verifier la phase et le nombre de joueurs
+    if (this.phase !== 'lobby') return
+    if (this.players.size === 0) return
+
     // TODO: Appeler nextQuestion()
+    this.nextQuestion()
   }
 
   /**
@@ -99,12 +113,32 @@ export class QuizRoom {
    */
   nextQuestion(): void {
     // TODO: Annuler le timer existant (clearInterval)
+    if (this.timerId) {
+      clearInterval(this.timerId)
+      this.timerId = null
+    }
+
     // TODO: Incrementer l'index
+    this.currentQuestionIndex++
+
     // TODO: Verifier si le quiz est termine
+    if (this.currentQuestionIndex >= this.questions.length) {
+      this.broadcastLeaderboard()
+      return
+    }
+
     // TODO: Reinitialiser answers
+    this.answers.clear()
+
     // TODO: Changer la phase
+    this.phase = 'question'
+    this.remaining = this.questions[this.currentQuestionIndex].timerSec
+
     // TODO: Envoyer la question
+    this.broadcastQuestion()
+
     // TODO: Demarrer le compte a rebours
+    this.timerId = setInterval(() => this.tick(), 1000)
   }
 
   /**
@@ -118,10 +152,26 @@ export class QuizRoom {
    */
   handleAnswer(playerId: string, choiceIndex: number): void {
     // TODO: Verifier la phase
+    if (this.phase !== 'question') return
+
     // TODO: Verifier que le joueur n'a pas deja repondu
+    if (this.answers.has(playerId)) return
+
     // TODO: Enregistrer la reponse
+    this.answers.set(playerId, choiceIndex)
+
     // TODO: Calculer le score si correct
+    const question = this.questions[this.currentQuestionIndex]
+    if (choiceIndex === question.correctIndex) {
+      const points = 1000 + Math.round(500 * (this.remaining / question.timerSec))
+      const currentScore = this.scores.get(playerId) ?? 0
+      this.scores.set(playerId, currentScore + points)
+    }
+
     // TODO: Si tout le monde a repondu, terminer la question
+    if (this.answers.size === this.players.size) {
+      this.timeUp()
+    }
   }
 
   /**
@@ -132,8 +182,15 @@ export class QuizRoom {
    */
   private tick(): void {
     // TODO: Decrementer remaining
+    this.remaining--
+
     // TODO: Envoyer 'tick' a tous
+    this.broadcastToAll({ type: 'tick', remaining: this.remaining })
+
     // TODO: Si temps ecoule, appeler timeUp()
+    if (this.remaining <= 0) {
+      this.timeUp()
+    }
   }
 
   /**
@@ -143,9 +200,20 @@ export class QuizRoom {
    * - Appeler broadcastResults()
    */
   private timeUp(): void {
+    // garde contre double appel (depuis tick ET handleAnswer)
+    if (this.phase !== 'question') return
+
     // TODO: Annuler le timer
+    if (this.timerId) {
+      clearInterval(this.timerId)
+      this.timerId = null
+    }
+
     // TODO: Changer la phase
+    this.phase = 'results'
+
     // TODO: Envoyer les resultats
+    this.broadcastResults()
   }
 
   /**
@@ -154,7 +222,7 @@ export class QuizRoom {
    */
   private getPlayerWsList(): WebSocket[] {
     // TODO: Extraire les ws de this.players.values()
-    return []
+    return Array.from(this.players.values()).map(p => p.ws)
   }
 
   /**
@@ -162,7 +230,10 @@ export class QuizRoom {
    */
   private broadcastToAll(message: ServerMessage): void {
     // TODO: Envoyer au host si connecte
+    if (this.hostWs) send(this.hostWs, message)
+
     // TODO: Envoyer a tous les joueurs via broadcast()
+    broadcast(this.getPlayerWsList(), message)
   }
 
   /**
@@ -172,8 +243,18 @@ export class QuizRoom {
    */
   private broadcastQuestion(): void {
     // TODO: Recuperer la question courante
+    const question = this.questions[this.currentQuestionIndex]
+
     // TODO: Creer l'objet question SANS correctIndex (utiliser destructuring)
+    const { correctIndex: _, ...questionForClient } = question
+
     // TODO: Envoyer a tous via broadcastToAll()
+    this.broadcastToAll({
+      type: 'question',
+      question: questionForClient,
+      index: this.currentQuestionIndex,
+      total: this.questions.length,
+    })
   }
 
   /**
@@ -184,9 +265,27 @@ export class QuizRoom {
    */
   private broadcastResults(): void {
     // TODO: Recuperer la question courante
+    const question = this.questions[this.currentQuestionIndex]
+
     // TODO: Calculer la distribution des reponses
+    const distribution = new Array(question.choices.length).fill(0)
+    for (const choiceIndex of this.answers.values()) {
+      distribution[choiceIndex]++
+    }
+
     // TODO: Construire l'objet scores { nom: score }
+    const scores: Record<string, number> = {}
+    for (const [id, player] of this.players.entries()) {
+      scores[player.name] = this.scores.get(id) ?? 0
+    }
+
     // TODO: Envoyer 'results' a tous
+    this.broadcastToAll({
+      type: 'results',
+      correctIndex: question.correctIndex,
+      distribution,
+      scores,
+    })
   }
 
   /**
@@ -197,8 +296,18 @@ export class QuizRoom {
    */
   broadcastLeaderboard(): void {
     // TODO: Construire le tableau rankings trie par score decroissant
+    const rankings = Array.from(this.players.values())
+      .map(player => ({
+        name: player.name,
+        score: this.scores.get(player.id) ?? 0,
+      }))
+      .sort((a, b) => b.score - a.score)
+
     // TODO: Changer la phase
+    this.phase = 'leaderboard'
+
     // TODO: Envoyer 'leaderboard' a tous
+    this.broadcastToAll({ type: 'leaderboard', rankings })
   }
 
   /**
@@ -209,7 +318,15 @@ export class QuizRoom {
    */
   end(): void {
     // TODO: Annuler le timer
+    if (this.timerId) {
+      clearInterval(this.timerId)
+      this.timerId = null
+    }
+
     // TODO: Changer la phase
+    this.phase = 'ended'
+
     // TODO: Envoyer 'ended' a tous
+    this.broadcastToAll({ type: 'ended' })
   }
 }
