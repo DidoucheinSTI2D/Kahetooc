@@ -24,6 +24,7 @@ function App() {
   const [currentQuestion, setCurrentQuestion] = useState<Omit<QuizQuestion, 'correctIndex'> | null>(null)
   const [remaining, setRemaining] = useState(0)
   const [hasAnswered, setHasAnswered] = useState(false)
+  const [selectedChoice, setSelectedChoice] = useState(-1)
   const [lastCorrect, setLastCorrect] = useState(false)
   const [score, setScore] = useState(0)
   const [rankings, setRankings] = useState<{ name: string; score: number }[]>([])
@@ -39,21 +40,30 @@ function App() {
     switch (lastMessage.type) {
       case 'joined': {
         // TODO: Mettre a jour la liste des joueurs
+        setPlayers(lastMessage.players)
         // TODO: Passer en phase 'lobby'
+        setPhase('lobby')
         // TODO: Effacer les erreurs
+        setError(undefined)
         break
       }
 
       case 'question': {
         // TODO: Mettre a jour currentQuestion avec lastMessage.question
+        setCurrentQuestion(lastMessage.question)
         // TODO: Mettre a jour remaining avec lastMessage.question.timerSec
+        setRemaining(lastMessage.question.timerSec)
         // TODO: Reinitialiser hasAnswered a false
+        setHasAnswered(false)
+        setSelectedChoice(-1)
         // TODO: Changer la phase en 'question'
+        setPhase('question')
         break
       }
 
       case 'tick': {
         // TODO: Mettre a jour remaining avec lastMessage.remaining
+        setRemaining(lastMessage.remaining)
         break
       }
 
@@ -61,24 +71,31 @@ function App() {
         // TODO: Verifier si le joueur a repondu correctement
         //   (comparer la reponse du joueur avec lastMessage.correctIndex)
         // TODO: Mettre a jour lastCorrect (true/false)
+        setLastCorrect(selectedChoice === lastMessage.correctIndex)
         // TODO: Recuperer le score du joueur depuis lastMessage.scores
+        setScore(lastMessage.scores[playerName] ?? 0)
         // TODO: Changer la phase en 'feedback'
+        setPhase('feedback')
         break
       }
 
       case 'leaderboard': {
         // TODO: Mettre a jour rankings avec lastMessage.rankings
+        setRankings(lastMessage.rankings)
         // TODO: Changer la phase en 'leaderboard'
+        setPhase('leaderboard')
         break
       }
 
       case 'ended': {
         // TODO: Changer la phase en 'ended'
+        setPhase('ended')
         break
       }
 
       case 'error': {
         // TODO: Stocker le message d'erreur dans le state error
+        setError((lastMessage as { type: 'error'; message: string }).message)
         break
       }
     }
@@ -89,14 +106,20 @@ function App() {
   /** Appele quand le joueur soumet le formulaire de connexion */
   const handleJoin = (code: string, name: string) => {
     // TODO: Sauvegarder le nom du joueur dans playerName
+    setPlayerName(name)
     // TODO: Envoyer un message 'join' au serveur avec sendMessage
+    sendMessage({ type: 'join', quizCode: code, name })
   }
 
   /** Appele quand le joueur clique sur un choix de reponse */
   const handleAnswer = (choiceIndex: number) => {
     // TODO: Verifier que le joueur n'a pas deja repondu (hasAnswered)
+    if (hasAnswered) return
     // TODO: Marquer hasAnswered a true
+    setHasAnswered(true)
+    setSelectedChoice(choiceIndex)
     // TODO: Envoyer un message 'answer' au serveur avec l'id de la question et le choiceIndex
+    sendMessage({ type: 'answer', questionId: currentQuestion!.id, choiceIndex })
   }
 
   // --- Rendu par phase ---
