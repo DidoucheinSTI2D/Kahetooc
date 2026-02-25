@@ -42,47 +42,67 @@ function App() {
         // TODO: Quand le serveur envoie un sync (apres host:create),
         // extraire le quizCode de lastMessage.data et mettre a jour l'etat
         // Changer la phase vers lastMessage.phase
+        const data = lastMessage.data as { quizCode: string }
+        setQuizCode(data.quizCode)
+        setPhase(lastMessage.phase)
         break
       }
 
       case 'joined': {
         // TODO: Mettre a jour la liste des joueurs avec lastMessage.players
+        setPlayers(lastMessage.players)
         break
       }
 
       case 'question': {
         // TODO: Mettre a jour currentQuestion, questionIndex, questionTotal
+        setCurrentQuestion(lastMessage.question)
+        setQuestionIndex(lastMessage.index)
+        setQuestionTotal(lastMessage.total)
         // TODO: Initialiser remaining avec la duree du timer de la question
+        setRemaining(lastMessage.question.timerSec)
         // TODO: Reinitialiser answerCount a 0
+        setAnswerCount(0)
         // TODO: Changer la phase en 'question'
+        setPhase('question')
         break
       }
 
       case 'tick': {
         // TODO: Mettre a jour remaining avec lastMessage.remaining
+        setRemaining(lastMessage.remaining)
         break
       }
 
       case 'results': {
         // TODO: Mettre a jour correctIndex, distribution
+        setCorrectIndex(lastMessage.correctIndex)
+        setDistribution(lastMessage.distribution)
         // TODO: Calculer answerCount (somme de distribution)
+        const total = lastMessage.distribution.reduce((sum, n) => sum + n, 0)
+        setAnswerCount(total)
         // TODO: Changer la phase en 'results'
+        setPhase('results')
         break
       }
 
       case 'leaderboard': {
         // TODO: Mettre a jour rankings avec lastMessage.rankings
+        setRankings(lastMessage.rankings)
         // TODO: Changer la phase en 'leaderboard'
+        setPhase('leaderboard')
         break
       }
 
       case 'ended': {
         // TODO: Changer la phase en 'ended'
+        setPhase('ended')
         break
       }
 
       case 'error': {
         // TODO: Afficher l'erreur (console.error ou alert)
+        console.error('[Host] Erreur serveur:', (lastMessage as { type: 'error'; message: string }).message)
         break
       }
     }
@@ -93,16 +113,19 @@ function App() {
   /** Appele quand le host soumet le formulaire de creation */
   const handleCreateQuiz = (title: string, questions: QuizQuestion[]) => {
     // TODO: Envoyer un message 'host:create' au serveur avec sendMessage
+    sendMessage({ type: 'host:create', title, questions })
   }
 
   /** Appele quand le host clique sur "Demarrer" dans le lobby */
   const handleStart = () => {
     // TODO: Envoyer un message 'host:start' au serveur
+    sendMessage({ type: 'host:start' })
   }
 
   /** Appele quand le host clique sur "Question suivante" */
   const handleNext = () => {
     // TODO: Envoyer un message 'host:next' au serveur
+    sendMessage({ type: 'host:next' })
   }
 
   // --- Rendu par phase ---
